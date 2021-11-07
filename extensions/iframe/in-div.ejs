@@ -1,19 +1,48 @@
 <style>
   #iframe-overlay {
+    display: flex;
     height: 100%;
   }
 
+  #rootdiv.focus-mode #iframe-overlay {
+    background-color: black;
+  }
+
   #iframe-overlay iframe {
-    height: 100%;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
     width: 100%;
+    height: 100%;
+    position: absolute;
+  }
+
+  .iframe-aspect-ratio-container {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%;
+    margin: auto;
+  }
+
+  #rootdiv.focus-mode #iframe-overlay iframe {
+    border: 0;
   }
 
   #rootdiv.focus-mode #iframe-expand {
     display: none;
   }
+
+  #iframe-expand {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
 </style>
 
 <div id="iframe-overlay">
-  <iframe src="" allowfullscreen></iframe>
-  <button id="iframe-expand">Fullscreen</button>
+  <div class="iframe-aspect-ratio-container">
+    <iframe src="" allowfullscreen></iframe>
+    <button id="iframe-expand">Fullscreen</button>
+  </div>
 </div>

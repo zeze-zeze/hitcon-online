@@ -35,10 +35,6 @@ body {
   z-index: -10;
 }
 
-#mapcanvas {
-  box-sizing: content-box;
-}
-
 #avatar-selection-div {
   position: absolute;
   top: 0px;
@@ -87,17 +83,35 @@ body {
   overflow: auto;
 }
 
-#map-render-overlay {
+#maprender-overlay {
   width: 100%;
   height: 100%;
   /* We want to make sure that 100% width/height doesn't result in overflow. */
   box-sizing: border-box;
   /* disable overflow so that the oversized canvas can be center-aligned automatically */
   overflow: hidden;
+  position: relative;
+}
+
+#maprender-overlay canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+#mapcanvas {
+  z-index: 3;
+}
+
+#backgroundcanvas {
+  z-index: 2;
+}
+
+#outofboundcanvas {
+  z-index: 1;
 }
 
 .overlay {
-  background-color: Ivory;
   position: absolute;
   opacity: 85%;
   z-index: 5;
@@ -117,7 +131,7 @@ body {
 #overlay-bottomleft {
   bottom: 15%;
   left: 5%;
-  width: 15%;
+  width: 20%;
   height: 20%;
 }
 
@@ -154,7 +168,7 @@ body {
   position: absolute;
   bottom: 50px;
   right: 50px;
-  z-index: 1;
+  z-index: 100;
 }
 
 #rootdiv:not(.focus-mode) #exit-focus {
@@ -188,4 +202,16 @@ body {
 
 .modal-container.visible {
   z-index: 110;
+}
+
+.ruler-helper {
+  position: absolute;
+  z-index: -300;
+  right: 0;
+  bottom: 0;
+  background-color: red;
+}
+
+.ruler-helper-text {
+  font-size: 5vh;
 }

@@ -32,6 +32,7 @@
       "bombman",
       "iobj-lib",
       "items",
+      "jitsi",
       "map-portal",
       "MapWatermark",
       "notification",
@@ -41,13 +42,19 @@
       "iframe"
     ],
     "standalone": {
-      "chat": "127.0.0.1:5020",
-      "helloworld": "127.0.0.1:5021",
-      "bombman": "127.0.0.1:5022",
-      "items": "127.0.0.1:5023",
-      "npc": "127.0.0.1:5024"
     }
   },
+  "jitsi": {
+    "hmacSecret": "secret",
+    "prefix": "hitcon"
+  },
+  "terminal": {
+    "internalAddress": "localhost",
+    "grpcPort": 5051,
+    "publicAddress": "localhost:5050",
+    "socketioPath": ""
+  },
   "publicAddress": null,
+  "allowedOrigins": [],
   "movingRequestThreshold": 100
 }

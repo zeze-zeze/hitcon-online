@@ -52,11 +52,14 @@ class GatewayService {
     this.extMan.setRpcHandlerFromGateway(this.rpcHandler);
     await this.rpcHandler.registerAsGateway();
     this.rpcHandler.registerRPC('callS2c', this.callS2c.bind(this));
-    this.rpcHandler.registerRPC('teleport', async (serviceName, playerID, mapCoord, facing) => {
-      return await this.teleportPlayer(playerID, MapCoord.fromObject(mapCoord), facing);
+    this.rpcHandler.registerRPC('teleport', async (serviceName, playerID, mapCoord, facing, allowOverlap) => {
+      return await this.teleportPlayer(playerID, MapCoord.fromObject(mapCoord), facing, allowOverlap);
     });
     this.rpcHandler.registerRPC('getToken', async (serviceName, playerID) => {
       return await this.handleGetToken(playerID);
+    });
+    this.rpcHandler.registerRPC('kickPlayer', async (serviceName, playerID, reason) => {
+      return await this.kickPlayer(playerID, reason);
     });
     this.servers = [];
     await this.extMan.createAllInGateway(this.rpcHandler, this);
@@ -135,11 +138,39 @@ class GatewayService {
         }
         socket.emit('authenticated', {});
         socket.decoded_token = verified;
-        this.addSocket(socket);
+        const kickIfConnected = (msg.kickIfConnected === true);
+        this.addSocket(socket, kickIfConnected);
       });
     });
   }
 
+  /**
+   * Kick a player that might not be in this gateway server.
+   */
+  async kickRemotePlayer(playerID, reason) {
+    const playerService = await this.dir.getPlayerGatewayService(playerID);
+    if (typeof playerService === 'string') {
+      return await this.rpcHandler.callRPC(playerService, 'kickPlayer',
+        playerID, reason);
+    }
+    console.warn('Failed to kick player, no service: ', playerID);
+    return false;
+  }
+
+  /**
+   * Kick the given player with the given reason.
+   */
+  async kickPlayer(playerID, reason) {
+    if (typeof playerID !== 'string' || !(playerID in this.socks)) {
+      console.error("Can't kick player: ", playerID);
+      return false;
+    }
+    return await this.notifyKicked(this.socks[playerID], reason);
+  }
+
+  /**
+   * Notify a player that the player have been kicked.
+   */
   async notifyKicked(socket, reason) {
     socket.emit('kicked', reason);
     await new Promise((r) => setTimeout(r, 5000));
@@ -152,7 +183,7 @@ class GatewayService {
    * socket.decoded_token.uid should be populated and is the User ID.
    * @param {Socket} socket - The socket.io socket of the authorized user.
    */
-  async addSocket(socket) {
+  async addSocket(socket, kickIfConnected) {
     // This socket is authenticated, we are good to handle more events from it.
 
     const playerID = socket.decoded_token.sub;
@@ -161,14 +192,30 @@ class GatewayService {
     let ret = await this.rpcHandler.registerPlayer(playerID);
     if (!ret) {
       // Player already connected.
-      console.warn(`Player ${playerID} already connected`);
-      await this.notifyKicked(socket, 'Duplicate connection');
-      return;
+      if (!kickIfConnected) {
+        await this.notifyKicked(socket, 'Duplicate connection');
+        console.warn(`Player ${playerID} already connected and kickIfConnected=false`);
+        return;
+      }
+
+      // Try kick player.
+      await this.kickRemotePlayer(playerID);
+      // Try again in 0.5s.
+      await new Promise(resolve => setTimeout(resolve, 500));
+      ret = await this.rpcHandler.registerPlayer(playerID);
+      if (!ret) {
+        await this.notifyKicked(socket, 'Duplicate connection');
+        console.warn(`Player ${playerID} already connected but retry still failed`);
+        return;
+      }
     }
 
     // Load the player data.
     socket.playerData = await this.dir.getPlayerData(playerID);
     socket.playerID = playerID;
+
+    // Notify the client about any previous data.
+    socket.emit('previousData', PlayerSyncMessage.fromObject(socket.playerData));
 
     socket.on('disconnect', (reason) => {
       this.onDisconnect(socket, reason);
@@ -190,7 +237,7 @@ class GatewayService {
     socket.on('callC2sAPI', (msg, callback) => {
       const p = this.extMan.onC2sCalled(msg, socket.playerID);
       p.then((msg) => {
-        if (typeof msg === 'object' && 'error' in msg && typeof msg.error === 'string') {
+        if (typeof msg === 'object' && msg !== null && 'error' in msg && typeof msg.error === 'string') {
           console.error(`c2s call error: ${msg.error}`);
         }
         callback(msg);
@@ -219,9 +266,15 @@ class GatewayService {
     socket.on('avatarSelect', async (msg) => {
       // initialize the appearance of player
       socket.playerData.displayName = msg.displayName;
-      socket.playerData.displayChar = msg.displayChar; // TODO (important): check valid or not
+      socket.playerData.displayChar = msg.displayChar;
 
       const firstLocation = PlayerSyncMessage.fromObject(socket.playerData);
+      if (!firstLocation.check(this.gameMap.graphicAsset)) {
+        // Kick player for invalid avatar args.
+        await this.notifyKicked(socket, 'Invalid avatarSelect args');
+        return;
+      }
+
       await this._broadcastPlayerUpdate(firstLocation);
       this.broadcaster.sendStateTransfer(socket);
 
@@ -282,6 +335,11 @@ class GatewayService {
       return;
     }
 
+    if (!updateMsg.check(this.gameMap.graphicAsset)) {
+      failOnPlayerUpdate(socket);
+      return;
+    }
+
     // if the player moves
     if (updateMsg.mapCoord !== undefined) {
       if (!checkPlayerMove(socket.playerData, updateMsg, this.gameMap)) {
@@ -289,7 +347,7 @@ class GatewayService {
         return;
       }
 
-      if (!(await this._teleportPlayerInternal(socket, updateMsg))) {
+      if (!(await this._teleportPlayerInternal(socket, updateMsg, false))) {
         failOnPlayerUpdate(socket);
         return;
       }
@@ -306,13 +364,14 @@ class GatewayService {
    * If `ghostMode` is specified in msg, this function will not fail.
    * @param {Socket} socket - TODO
    * @param {PlayerSyncMessage} msg - TODO
+   * @param {Boolean} allowOverlap - If true, disable occupation check.
    * @return {Boolean} - success or not
    */
-  async _teleportPlayerInternal(socket, msg) {
+  async _teleportPlayerInternal(socket, msg, allowOverlap=false) {
     const ret = await this._enterCoord(msg.mapCoord);
 
     // If the player was in ghost mode, ignore the occupation check.
-    if (!socket.playerData.ghostMode) {
+    if (!(socket.playerData.ghostMode || allowOverlap)) {
       // If the player moves in normal mode, check the occupation.
       if (!msg.ghostMode && !ret) {
         await this._leaveCoord(msg.mapCoord);
@@ -332,16 +391,19 @@ class GatewayService {
    * Teleport the player to the specified map coordinate (without any checking).
    * This function can be called by extension or trusted external code.
    */
-  async teleportPlayer(playerID, mapCoord, facing) {
+  async teleportPlayer(playerID, mapCoord, facing, allowOverlap) {
     if (!(playerID in this.socks)) {
       console.error(`Can't teleport ${playerID} who is not on our server.`);
       return false;
+    }
+    if (allowOverlap !== true) {
+      allowOverlap = false;
     }
     const socket = this.socks[playerID];
     const msg = PlayerSyncMessage.fromObject(this.socks[playerID].playerData);
     msg.facing = facing;
     msg.mapCoord = mapCoord;
-    return this._teleportPlayerInternal(socket, msg);
+    return this._teleportPlayerInternal(socket, msg, allowOverlap);
   }
 
   /**

@@ -82,6 +82,11 @@ class MainUI {
       this.rootdivDom.classList.remove('focus-mode');
       this.focusOverlay.show(this.focusPos);
       this.mapRendererOverlay.show(OverlayPosition.MAIN_VIEW);
+      console.log(this.exitCallback);
+      if (this.exitCallback instanceof Function) {
+        this.exitCallback();
+      }
+      this.exitCallback = () => {};
     };
   }
 
@@ -259,12 +264,24 @@ class MainUI {
     this.rootdivDom.appendChild(dom);
   }
 
-  enterFocusMode(focusOverlay, focusPos) {
+  enterFocusMode(focusOverlay, focusPos, exitCallback) {
     this.focusOverlay = focusOverlay;
     this.focusPos = focusPos;
+    this.exitCallback = exitCallback;
 
     this.rootdivDom.classList.add('focus-mode');
     this.focusOverlay.show(OverlayPosition.MAIN_VIEW);
+  }
+
+  /**
+   * Enable a ruler div that shows the coordinate under the cursor.
+   * Used only for debugging.
+   */
+  enableRuler() {
+    $('#ruler-helper-div').css('z-index', '300');
+    game.inputManager.registerCanvasOnMouseMoveMapCoord((coord) => {
+      $('#ruler-helper-text').text(`Coord: ${coord.x.toFixed(1)} ${coord.y.toFixed(1)}`);
+    });
   }
 
   // ========== Internal Methods ============
@@ -362,6 +379,11 @@ class MainUI {
     // If there's anything in the target, clear it out.
     if (this.overlays.has(position)) {
       if (!this.overlays.get(position).hide()) return false;
+    }
+    // If we're in any overlay, clear it out as well.
+    if (overlay.isOpen) {
+      console.info(`Clearing overflay in position to show it else where: `, overlay.position, position);
+      this._clearOverlay(overlay.position, overlay);
     }
 
     this.overlays.set(position, overlay);

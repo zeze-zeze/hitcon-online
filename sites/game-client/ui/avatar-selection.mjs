@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 import {MAP_CELL_SIZE} from '../map-renderer.mjs';
+import {PLAYER_DISPLAY_NAME_MAX_LENGTH} from '../../../common/gamelib/player.mjs';
+import {randomChoice} from '../../../common/utility/random-tool.mjs';
 
 const DOM_ID = 'avatar-selection-div';
 
@@ -58,6 +60,9 @@ class AvatarSelectionPage {
       newAvatar.addEventListener('click', this.setSelectedAvatar.bind(this, charName, newAvatar));
       container.appendChild(newAvatar);
     }
+
+    // select random one by default
+    randomChoice(container.children).click();
   }
 
   /**
@@ -74,12 +79,38 @@ class AvatarSelectionPage {
   }
 
   /**
+   * Send the selection to gateway server.
+   */
+  _submit(displayName, displayChar) {
+    this.socket.emit('avatarSelect', {displayName, displayChar});
+  }
+
+  /**
    * Submit the display name and selected avatar.
    */
   submit() {
-    // TODO
     const displayName = this.DOM.querySelector('input[name="display-name"]').value;
-    this.socket.emit('avatarSelect', {displayName, displayChar: this.selectedAvatar[0]});
+    if (displayName.length > PLAYER_DISPLAY_NAME_MAX_LENGTH || displayName.length <= 0) {
+      alert(`Name should be non-empty and no longer than ${PLAYER_DISPLAY_NAME_MAX_LENGTH}`);
+      return;
+    }
+    const displayChar = this.selectedAvatar[0];
+    if (displayChar === null) {
+      alert('Please select a character');
+      return;
+    }
+    this._submit(displayName, displayChar);
+  }
+
+  /**
+   * Automatically skip the selection screen.
+   * This is usually used for debugging purpose.
+   */
+  autoSubmit(displayName, displayChar) {
+    if (displayChar === null) {
+      displayChar = this.selectedAvatar[0];
+    }
+    this._submit(displayName, displayChar);
   }
 
   /**

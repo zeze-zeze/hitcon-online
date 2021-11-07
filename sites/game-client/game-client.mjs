@@ -53,7 +53,7 @@ class GameClient {
     this.token = token;
     let socket = this.socket;
     socket.on('connect', () => {
-      socket.emit('authenticate', {token: token});
+      socket.emit('authenticate', {token: token, kickIfConnected: true});
       socket.on('authenticated', () => {
         console.log('Authenticated!');
       });
@@ -61,6 +61,9 @@ class GameClient {
         console.error(`Authorization failed: ${JSON.stringify(msg.data)}`);
         this.mainUI.errorModal.displayError("Authorization failed.", "Please refresh to reconnect.");
         this.onDisconnect();
+      });
+      socket.on('previousData', (msg) => {
+        this.onPreviousData(msg);
       });
       socket.on('gameStart', (msg) => {
         this.onStartup(msg);
@@ -97,11 +100,13 @@ class GameClient {
     });
     socket.on("disconnect", (reason) => {
       if (reason !== "io client disconnect") {
-        this.mainUI.errorModal.displayError(reason, "Please refresh to reconnect.");
+        if (!this.mainUI.errorModal.isActive()) {
+          this.mainUI.errorModal.displayError(reason, "Please refresh to reconnect.");
+        }
       }
     });
     socket.on("kicked", (reason) => {
-      game.errorModal.displayError(reason, "Please refresh to reconnect.");
+      this.mainUI.errorModal.displayError(reason, "Please refresh to reconnect.");
     });
   }
 
@@ -136,6 +141,17 @@ class GameClient {
 
     // Start the browser side of all extensions.
     this.extMan.startAllExtensionClient();
+  }
+
+  /**
+   * This is called when the server gives us the data from previous session
+   * when the connection is established.
+   */
+  async onPreviousData(msg) {
+    window.dispatchEvent(new CustomEvent(
+      'previousData', {
+        detail: msg
+      }));
   }
 
   /**

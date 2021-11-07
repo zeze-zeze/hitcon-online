@@ -40,6 +40,10 @@ class Standalone {
       return;
     }
     const loc = msg.mapCoord;
+    if (typeof loc === 'undefined') {
+      // No location? Just skip.
+      return;
+    }
     let cellVal = null;
     try {
       cellVal = this.helper.gameMap.getCell(loc, 'portal');
@@ -62,7 +66,7 @@ class Standalone {
       // Not target, no need to teleport.
       return;
     }
-    await this.helper.teleport(msg.playerID, target);
+    await this.helper.teleport(msg.playerID, target, true);
   }
 
   /**

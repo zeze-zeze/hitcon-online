@@ -29,7 +29,8 @@ class DialogModal extends Modal {
     let triggered = false;
     const p = new Promise((resolve, reject) => {
       for (const btns of btnList) {
-        for (const btn of btns) {
+        const btns_ = HTMLCollection.prototype.isPrototypeOf(btns) ? btns : [btns];
+        for (const btn of btns_) {
           const f = (btn) => {
             // Extra layer of closure so we can pass btn in.
             return () => {
@@ -63,8 +64,8 @@ class DialogModal extends Modal {
       this.subjectDOM.innerHTML = subject;
       this.msgDOM.innerHTML = san_message;
 
-      this.btnContDOM.innerHTML = `<button id="dialog-btn-OK">${san_buttonText}</button>`;
-      const btnOK = document.getElementById('dialog-btn-OK');
+      this.btnContDOM.innerHTML = `<button class="dialog-btn-OK">${san_buttonText}</button>`;
+      const btnOK = document.getElementsByClassName('dialog-btn-OK');
 
       // Set the visibilities right.
       this.btnContDOM.classList.add('visible');

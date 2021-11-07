@@ -30,12 +30,18 @@ absolute URL.
         </div>
       </div>
 
+      <div id="ruler-helper-div" class="ruler-helper">
+        <span id="ruler-helper-text">Coord: </span>
+      </div>
+
       <div id="staging-div">
         <!--
         This div is for stuff that's not yet being displayed.
         It is currently semi-transparent for debugging purpose.
         -->
-        <div id="map-render-overlay" class="container-center">
+        <div id="maprender-overlay">
+          <canvas id="outofboundcanvas"></canvas>
+          <canvas id="backgroundcanvas"></canvas>
           <canvas id="mapcanvas"></canvas>
         </div>
         <div id="error-modal">
@@ -132,6 +138,9 @@ absolute URL.
           </button>
           <button class="user-action" id="jitsi-screen">
             <img src="" alt="screen">
+          </button>
+          <button class="user-action" id="items-inventory-btn">
+            <img src="" alt="inventory">
           </button>
         </div>
       </div>
@@ -233,7 +242,7 @@ absolute URL.
         game.socket = game.io(game.socketURL, {reconnection: false});
 
         game.extMan = new ClientExtensionManager(game.socket, game.extensionList);
-        game.mapRenderer = new MapRenderer(document.querySelector('#mapcanvas'), game.map, game.gameState);
+        game.mapRenderer = new MapRenderer(document.querySelector('#mapcanvas'), document.querySelector('#backgroundcanvas'), document.querySelector('#outofboundcanvas'), game.map, game.gameState);
         if (window.query.disableRender) {
           game.mapRenderer.disableRenderForTesting();
         }
@@ -241,6 +250,19 @@ absolute URL.
         game.inputManager = new InputManager(game.mapRenderer);
         game.movementManager = new MovementManager(game.socket, game.gameState, game.inputManager, game.mapRenderer);
         game.gameClient = new GameClient(game.socket, game.map, game.gameState, game.mapRenderer, game.inputManager, game.movementManager, game.extMan, game.mainUI, game.avatarSelectionPage);
+
+        if (window.query.test === 'type1'){
+          window.addEventListener('previousData', (evt) => {
+            let displayChar = evt.detail.displayChar;
+            let displayName = evt.detail.displayName;
+            if (!displayName) displayName = evt.detail.playerID;
+            if (!displayChar) displayChar = null;
+            game.avatarSelectionPage.autoSubmit(displayName, displayChar);
+            setTimeout(() => {
+              game.clientBot = new ClientBot(game.mapRenderer);
+            }, 3000);
+          });
+        }
 
         game.gameClient.initialize(game.token);
         game.mapRenderer.setGameClient(game.gameClient);
@@ -256,8 +278,9 @@ absolute URL.
           },
         ));
 
-        if (window.query.test === 'type1'){
-          game.clientBot = new ClientBot(game.mapRenderer);
+        // Ruler helper utility.
+        if (window.query.ruler === 'true') {
+          game.mainUI.enableRuler();
         }
 
         function onGameTick () {

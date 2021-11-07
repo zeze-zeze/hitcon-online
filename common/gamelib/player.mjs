@@ -247,6 +247,25 @@ class PlayerSyncMessage {
   }
 
   /**
+   * Check that the displayName and displayChar is correct.
+   */
+  check(graphicAsset) {
+    if (this.facing !== undefined && !['U', 'D', 'L', 'R'].includes(this.facing)) {
+      console.warn('Got invalid facing: ', this.facing, this);
+      return false;
+    }
+    if (this.displayName !== undefined && (typeof this.displayName !== 'string' || this.displayName.length <= 0 || this.displayName.length > PLAYER_DISPLAY_NAME_MAX_LENGTH)) {
+      console.warn('Got invalid displayName: ', this.displayName, this);
+      return false;
+    }
+    if (this.displayChar !== undefined && (typeof this.displayChar !== 'string' || !graphicAsset.hasCharacter(this.displayChar))) {
+      console.warn('Got invalid displayChar: ', this.displayChar, this);
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Deserialize a JSON object into Player.
    * @param {Object} obj - TODO
    * @return {Player}
@@ -266,7 +285,9 @@ class PlayerSyncMessage {
 }
 
 export default Player;
+
 export {
   Player,
   PlayerSyncMessage,
+  PLAYER_DISPLAY_NAME_MAX_LENGTH,
 };

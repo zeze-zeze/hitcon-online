@@ -3,6 +3,8 @@
 
 import JitsiHandler from './jitsi.mjs';
 import ToolbarButton from '/static/sites/game-client/ui/toolbar-button.mjs';
+import Overlay from '/static/sites/game-client/ui/overlay.mjs';
+import OverlayPosition from '/static/sites/game-client/ui/overlay-position.mjs';
 
 const JITSI_DIV = 'jitsi-container';
 
@@ -26,6 +28,37 @@ class JitsiContainer {
   }
 };
 
+/**
+ * This is a temporary overlay to put the Jitsi into fullscreen.
+ */
+class JitsiFullscreenOverlay extends Overlay {
+  /**
+   * Create the overlay, and add an event listener to put the Jitsi video into fullscreen when clicked.
+   * @constructor
+   * @param mainUI - main UI
+   */
+  constructor(mainUI) {
+    const dom = document.getElementById('jitsi-fullscreen-overlay');
+    super(mainUI, dom);
+    this.hide();
+    this.hasFullscreen = false;
+
+    const self = this;
+    $('#jitsi-remote-container').on('click', '.jitsi-user-container', function() {
+      if (self.hasFullscreen) return;
+      self.hasFullscreen = true;
+      const focusedParticipantId = $(this).attr('data-id');
+      $(this).find('video').eq(0).appendTo('#jitsi-fullscreen-overlay');
+      self.show(OverlayPosition.LEFT_BOTTOM);
+      mainUI.enterFocusMode(self, OverlayPosition.LEFT_BOTTOM, () => {
+        $('#jitsi-fullscreen-overlay > video').appendTo(`#jitsi-${focusedParticipantId}-container > .jitsi-user-video`);
+        self.hide();
+        self.hasFullscreen = false;
+      });
+    });
+  }
+}
+
 
 /**
  * This class is the browser/client side of an extension.
@@ -46,11 +79,16 @@ class Client {
     this.isMicrophoneOn = false;
     this.isCameraOn = false;
     this.isScreenSharingOn = false;
+
+    this.audioDevice = null;
+    this.videoDevice = null;
   }
 
   async gameStart() {
     this.container = new JitsiContainer(this.helper.mainUI);
     this.container.hide();
+
+    this.overlay = new JitsiFullscreenOverlay(this.helper.mainUI);
 
     // Microphone button
     this.microphoneButton = new ToolbarButton('/static/extensions/jitsi/common/icons/microphone-off.svg', false);
@@ -60,12 +98,14 @@ class Client {
         this.microphoneButton.changeIcon('/static/extensions/jitsi/common/icons/microphone-off.svg');
         this.isMicrophoneOn = false;
         if (this.jitsiObj) {
+          this.jitsiObj.isMuted.audio = false;
           this.jitsiObj.mute('audio');
         }
       } else {
         this.microphoneButton.changeIcon('/static/extensions/jitsi/common/icons/microphone-on.svg');
         this.isMicrophoneOn = true;
         if (this.jitsiObj) {
+          this.jitsiObj.isMuted.audio = true;
           this.jitsiObj.unmute('audio');
         }
       }
@@ -80,12 +120,14 @@ class Client {
         this.cameraButton.changeIcon('/static/extensions/jitsi/common/icons/camera-off.svg');
         this.isCameraOn = false;
         if (this.jitsiObj) {
+          this.jitsiObj.isMuted.video = false;
           this.jitsiObj.mute('video');
         }
       } else {
         this.cameraButton.changeIcon('/static/extensions/jitsi/common/icons/camera-on.svg');
         this.isCameraOn = true;
         if (this.jitsiObj) {
+          this.jitsiObj.isMuted.video = true;
           this.jitsiObj.unmute('video');
         }
       }
@@ -103,7 +145,8 @@ class Client {
         this.cameraButton.show();
 
         if (this.jitsiObj) {
-          this.jitsiObj.createLocalTracks(true);
+          this.jitsiObj.isWebcam = true;
+          this.jitsiObj.createLocalTrack('video');
         }
       } else {
         this.screenButton.changeIcon('/static/extensions/jitsi/common/icons/screen-on.svg');
@@ -115,17 +158,41 @@ class Client {
         this.cameraButton.changeIcon('/static/extensions/jitsi/common/icons/camera-off.svg');
 
         if (this.jitsiObj) {
-          this.jitsiObj.createLocalTracks(false);
+          this.jitsiObj.isMuted.video = true;
+          this.jitsiObj.isWebcam = false;
+          this.jitsiObj.createLocalTrack('desktop');
         }
       }
     });
     this.screenButton.show();
+
+    /* Audio and video input setting */
+    this.settingTab = this.helper.getExtObj('setting')?.tab;
+    if (this.settingTab) {
+      this.settingTab.addSubsection('general', 'device', '裝置設定', 10);
+      this.settingTab.addDropdown('device', 'video', '影像輸入', (value) => {
+        console.log('device video', value);
+        if (this.videoDevice !== value && this.jitsiObj) {
+          this.jitsiObj.createLocalTrack('video');
+        }
+        this.videoDevice = value;
+      }, 0);
+      this.settingTab.addDropdown('device', 'audio', '音訊輸入', (value) => {
+        console.log('device audio', value);
+        if (this.audioDevice !== value && this.jitsiObj) {
+          this.jitsiObj.createLocalTrack('audio');
+        }
+        this.audioDevice = value;
+      }, 10);
+    }
+
+    JitsiHandler.updateDeviceList(this.setSettingDeviceOptions.bind(this));
   }
 
   /**
    * Start the Jitsi Meeeting
    */
-  async startMeeting(meetingName, password) {
+  async startMeeting(meetingName, realMeetingName, password) {
     // if this.jitsiObj is set, the previous meeting has not yet ended.
     // TODO: Probably use Promise instead.
     // We may need to handle the case that `startMeeting` is called multiple times.
@@ -133,16 +200,14 @@ class Client {
       await new Promise(r => setTimeout(r, 1000));
     }
 
-    this.jitsiObj = new JitsiHandler(meetingName, password,
-      this.helper.gameClient.playerInfo.displayName);
+    this.jitsiObj = new JitsiHandler(realMeetingName, password,
+      this.helper.gameClient.playerInfo.displayName, this.getDevices, this.setSettingDeviceOptions.bind(this));
+
+    this.jitsiObj.isMuted.audio = !this.isMicrophoneOn;
+    this.jitsiObj.isMuted.video = !this.isCameraOn;
+
     this.currentMeeting = meetingName;
     this.container.show();
-
-    this.isCameraOn = false;
-    this.cameraButton.changeIcon('/static/extensions/jitsi/common/icons/camera-off.svg');
-
-    this.isMicrophoneOn = false;
-    this.microphoneButton.changeIcon('/static/extensions/jitsi/common/icons/microphone-off.svg');
   }
 
   /**
@@ -154,6 +219,11 @@ class Client {
       await this.jitsiObj.unload();
       this.jitsiObj = undefined;
       this.currentMeeting = undefined;
+
+      // Set screen sharing to false.
+      this.screenButton.changeIcon('/static/extensions/jitsi/common/icons/screen-off.svg');
+      this.isScreenSharingOn = false;
+      this.cameraButton.show();
     }
   }
 
@@ -165,7 +235,7 @@ class Client {
       this.stopMeeting();
       return;
     }
-    
+
     // If we get here, we're requested to join a meeting.
     if (typeof this.currentMeeting === 'string') {
       // There's an active meeting currently.
@@ -177,12 +247,24 @@ class Client {
     }
     // If we get here, there's no meeting.
     // Get the password of the meeting
-    let password = await this.helper.callC2sAPI(null, 'getPassword', this.helper.defaultTimeout, {'meetingName': meetingName});
+    let obj = await this.helper.callC2sAPI(null, 'getPassword', this.helper.defaultTimeout, {'meetingName': meetingName});
+    if (obj.error) {
+      console.error('Failed to updateMeeting, getPassword: ', obj);
+      return;
+    }
+
+    let password = obj.password;
     if (!password) {
       password = null;
     }
+    let realMeetingName = obj.meetingName;
+    if (!realMeetingName) {
+      console.warn('Got invalid meeting name from getPassword(): ', realMeetingName, meetingName);
+      realMeetingName = meetingName;
+    }
+
     // Join meeting
-    this.startMeeting(meetingName, password);
+    this.startMeeting(meetingName, realMeetingName, password);
   }
 
   /**
@@ -194,6 +276,24 @@ class Client {
     if (typeof map === 'object') {
       let m = map.getCell(msg.mapCoord, 'jitsi');
       this.updateMeeting(m);
+    }
+  }
+
+  /*
+   * Audio and video input setting
+   */
+  getDevices(type) {
+    if (type === 'video') return this.videoDevice;
+    if (type === 'audio') return this.audioDevice;
+    return undefined;
+  }
+
+  /**
+   *
+   */
+  setSettingDeviceOptions(deviceType, deviceList, currentDevice) {
+    if (this.settingTab) {
+      this.settingTab.updateDropdownOptions('device', deviceType, deviceList, currentDevice);
     }
   }
 };

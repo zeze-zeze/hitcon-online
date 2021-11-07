@@ -6,6 +6,7 @@ import fs from 'fs';
 
 import {randomShuffle, randomChoice} from '../../common/utility/random-tool.mjs';
 import InteractiveObjectServerBaseClass from '../../common/interactive-object/server.mjs';
+import {getRunPath, getConfigPath} from '../../common/path-util/path.mjs';
 
 // Bring out the FSM_ERROR for easier reference.
 const FSM_ERROR = InteractiveObjectServerBaseClass.FSM_ERROR;
@@ -111,7 +112,7 @@ class Standalone {
       console.error('Invalid number of problems: ', problems);
       return FSM_ERROR;
     }
-    let problemSet = JSON.parse(fs.readFileSync('items/problems.json'));
+    let problemSet = JSON.parse(fs.readFileSync(getRunPath('items/problems.json')));
     randomShuffle(problemSet);
     let result, correct = 0, d = '';
     for (let i = 0; i < problems; i++) {
@@ -135,7 +136,11 @@ class Standalone {
    */
   async s2s_sf_teleport(srcExt, playerID, kwargs, sfInfo) {
     const {mapCoord, nextState} = kwargs;
-    const result = await this.helper.teleport(playerID, mapCoord);
+    let allowOverlap = kwargs.allowOverlap;
+    if (allowOverlap !== false) {
+      allowOverlap = true;
+    }
+    const result = await this.helper.teleport(playerID, mapCoord, allowOverlap);
 
     if (result) return nextState;
     console.warn(`Player '${playerID}' cannot go to the place`);
